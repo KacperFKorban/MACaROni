@@ -1,19 +1,10 @@
 package macaroni.tests
 
 import scala.quoted.*
-import macaroni.*
-
-inline def normalizedFullNameUsage[T]: String = 
-  ${ normalizedFullNameImpl[T] }
+import macaroni.reflect.*
 
 inline def generateAMatchWithUnchecked: Option[Int] => Int =
   ${ generateAMatchWithUncheckedImpl }
-
-def normalizedFullNameImpl[T: Type](using Quotes): Expr[String] = {
-  import quotes.reflect.*
-  val s = TypeRepr.of[T].typeSymbol
-  Expr(s.normalizedFullName)
-}
 
 def generateAMatchWithUncheckedImpl(using Quotes): Expr[Option[Int] => Int] = {
   import quotes.reflect.*

@@ -1,35 +1,42 @@
-package macaroni
+package macaroni.quoted
 
 import scala.quoted.*
+import macaroni.reflect.*
 
-extension (using Quotes)(s: quotes.reflect.Symbol)
-  private def normalizedName: String = {
-    import quotes.reflect.*
-    val withoutObjectSuffix = if s.flags.is(Flags.Module) then s.name.stripSuffix("$") else s.name
-    val constructorNormalizedName = if s.isClassConstructor then "this" else withoutObjectSuffix
-    constructorNormalizedName
-  }
+def normalizedFullName[T: Type](using Quotes): Expr[String] = {
+  import quotes.reflect.*
+  val s = TypeRepr.of[T].typeSymbol
+  Expr(macaroni.reflect.normalizedFullName(s))
+}
 
-  private def ownerNameChain: List[String] = {
-    import quotes.reflect.*
-    if s.isNoSymbol then List.empty
-    else if s == defn.EmptyPackageClass then List.empty
-    else if s == defn.RootPackage then List.empty
-    else if s == defn.RootClass then List.empty
-    else s.owner.ownerNameChain :+ s.normalizedName
-  }
+private def gettersMapToExpr(using Quotes)(getters: Map[String, quotes.reflect.Term]): Expr[Map[String, Any]] = {
+  import quotes.reflect.*
+  val gettersListExpr = Expr.ofList(
+    getters.map { case (name, term) => Expr(name) -> term.asExpr }.map {
+      case (name, term) => '{ $name -> $term }
+    }.toList
+  )
+  '{ $gettersListExpr.toMap }
+}
 
-  def normalizedFullName: String =
-    s.ownerNameChain.mkString(".")
+def classDefaultArgumentGetters[T: Type](using Quotes): Expr[Map[String, Any]] = {
+  import quotes.reflect.*
+  val tpe = TypeRepr.of[T]
+  val s = tpe.typeSymbol.primaryConstructor
+  val companionRef = Ref(tpe.typeSymbol.companionModule)
+  val getters = companionRef.defaultArgumentGettersForMethod(s)(tpe.typeArgs)
+  gettersMapToExpr(getters)
+}
 
-extension (using Quotes)(t: quotes.reflect.TypeRepr)
-  def toTypeTree: quotes.reflect.TypeTree = {
-    import quotes.reflect.*
-    Inferred(t)
-  }
+def methodDefaultArgumentGetters[T: Type](obj: Expr[T], methodName: String)(using Quotes): Expr[Map[String, Any]] = {
+  import quotes.reflect.*
+  val tpe = TypeRepr.of[T]
+  val s = tpe.typeSymbol.methodMemberOrError(methodName)
+  val getters = obj.asTerm.defaultArgumentGettersForMethod(s)(tpe.typeArgs)
+  gettersMapToExpr(getters)
+}
 
-extension (using Quotes)(t: quotes.reflect.Term)
-  def withUnchecked: quotes.reflect.Term = {
-    import quotes.reflect.*
-    Typed(t, Inferred(AnnotatedType(t.tpe, New(Inferred(Symbol.requiredClass("scala.unchecked").typeRef))))) 
-  }
+def methodDefaultArgumentGetters[T: Type](obj: Expr[T], methodName: Expr[String])(using Quotes): Expr[Map[String, Any]] = {
+  import quotes.reflect.*
+  methodDefaultArgumentGetters(obj, methodName.valueOrAbort)
+}
